@@ -1,0 +1,117 @@
+from PIL import Image
+import numpy as np
+import matplotlib
+try:
+    matplotlib.use("TkAgg", force=True)
+except Exception:
+    pass
+import matplotlib.pyplot as plt
+
+
+def eye_positions(img):
+    try:
+        fig, ax = plt.subplots()
+        ax.imshow(img, cmap="gray")
+        ax.axis("off")
+
+        ax.set_title("Click eye on the left")
+        pt1 = plt.ginput(1, timeout=30)
+        if not pt1:
+            raise RuntimeError("No click received for left eye")
+        x1, y1 = pt1[0]
+
+        ax.plot(x1, y1, "gx", markersize=10)
+        plt.draw()
+
+        ax.set_title("Click eye on the right")
+        pt2 = plt.ginput(1, timeout=30)
+        if not pt2:
+            raise RuntimeError("No click received for right eye")
+        x2, y2 = pt2[0]
+
+        ax.plot(x2, y2, "gx", markersize=10)
+        plt.draw()
+        plt.close(fig)
+
+        return (x1, y1), (x2, y2)
+
+    except Exception as e:
+        plt.close("all")
+        print("GUI click failed:", e)
+        print("Fallback: enter eye coordinates manually as x y")
+        left = input("Left eye (x y): ")
+        right = input("Right eye (x y): ")
+        x1, y1 = map(float, left.split())
+        x2, y2 = map(float, right.split())
+        return (x1, y1), (x2, y2)
+
+
+def extract_face(img):
+    gray_img = img.convert("L")
+    c1, c2 = eye_positions(gray_img)
+
+    angle = np.degrees(np.arctan2(c2[1] - c1[1], c2[0] - c1[0]))
+    print("Angle =", angle)
+
+    rotated = gray_img.rotate(angle, expand=False)
+    arr = np.asarray(rotated)
+    h, w = arr.shape
+    center = np.array([[w / 2], [h / 2]])
+    rotation_matrix = np.array([
+        [np.cos(np.radians(angle)), -np.sin(np.radians(angle))],
+        [np.sin(np.radians(angle)), np.cos(np.radians(angle))],
+    ])
+
+    new_c1 = rotation_matrix @ (np.array(c1).reshape(2, 1) - center) + center
+    new_c2 = rotation_matrix @ (np.array(c2).reshape(2, 1) - center) + center
+    midpoint = (new_c1 + new_c2) / 2
+
+    fig, ax = plt.subplots()
+    ax.imshow(rotated, cmap="gray")
+    ax.plot(new_c1[0], new_c1[1], "go")
+    ax.plot(new_c2[0], new_c2[1], "go")
+    ax.plot(midpoint[0], midpoint[1], "ro")
+    ax.set_title("Rotated image with eye positions")
+    plt.show(block=True)
+    plt.close(fig)
+
+    scale = np.linalg.norm(new_c2 - new_c1) * 2.5
+    x, y = midpoint.flatten()
+    crop_box = (
+        int(x - scale / 2),
+        int(y - scale / 2),
+        int(x + scale / 2),
+        int(y + scale / 2),
+    )
+    cropped = rotated.crop(crop_box)
+    cropped = cropped.resize((100, 100))
+
+    fig, ax = plt.subplots()
+    ax.imshow(cropped, cmap="gray")
+    ax.axis("off")
+    plt.show(block=True)
+    plt.close(fig)
+
+    return cropped
+
+
+def main():
+    plane_images = [f"plane{i}.jpg" for i in range(1, 5)]
+    extracted_planes = []
+
+    for image_name in plane_images:
+        print(f"\nProcessing {image_name}")
+        with Image.open(image_name) as img:
+            plane = extract_face(img.rotate(np.random.randint(0, 360), expand=False))
+            extracted_planes.append(plane)
+
+        fig, ax = plt.subplots()
+        ax.imshow(plane, cmap="gray")
+        ax.axis("off")
+        ax.set_title(f"Extracted image - {image_name}")
+        plt.show(block=True)
+        plt.close(fig)
+
+
+if __name__ == "__main__":
+    main()
